@@ -132,6 +132,8 @@ typedef struct evfilestruct {
   uint32_t  left;          /**< # of valid 32 bit unread/unwritten words in block. */
   uint32_t  blksiz;        /**< size of block in 32 bit words - v3 or
                             *   size of actual data in block (including header) - v4. */
+	uint32_t blkbytesiz;      /**< size of block in bytes - v3 or
+														*   size of actual data in block (including header) - v4  */
   uint32_t  blknum;        /**< block number of block being read/written. Next to be used, starting at 1. */
   int       blkNumDiff;    /**< When reading, the difference between blknum read in and
                             *   the expected (sequential) value. Used in debug message. */

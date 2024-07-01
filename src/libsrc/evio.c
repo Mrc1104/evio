@@ -118,8 +118,15 @@
 /** Number used to determine data endian */
 #define EV_MAGIC 0xc0da0100
 
+/** Version 1's fixed block size in 32 bit words */
+#define EV_BLOCKSIZE_V1 32768
+/** Version 1's fixed block size in bytes */
+#define EV_BLOCKSIZE_V1_BYTES 131072
+
 /** Version 3's fixed block size in 32 bit words */
 #define EV_BLOCKSIZE_V3 8192
+/** Version 3's fixed block size in bytes */
+#define EV_BLOCKSIZE_V3_BYTES 32768
 
 /** Version 4's target block size in 32 bit words (16MB).
  * It is a soft limit since a single event larger than
@@ -160,8 +167,8 @@
 /** In versions 1-3, default size for a single file read in bytes.
  *  Equivalent to 500, 32,768 byte blocks.
  *  This constant <b>MUST BE</b> an integer multiple of 32768.*/
-#define EV_READ_BYTES_V3 16384000
-/* #define EV_READ_BYTES_V3 (32768) */
+#define EV_READ_BYTES_V1 65536000 // 131072* 500
+#define EV_READ_BYTES_V3 16384000 // 32768 * 500
 
 
 /**
@@ -200,7 +207,8 @@
  *
  *
  *      Block Size    = number of 32 bit ints in block (including this one).
- *                      This is fixed for versions 1-3, generally at 8192 (32768 bytes)
+ *											This is fixed for version 1, 32768 32-bit words (131072 bytes) 
+ *                      For versions 2 and 3, 8192 32-bit words (32768 bytes)
  *      Block Number  = id number (starting at 1)
  *      Header Size   = number of 32 bit nts in this header (always 8)
  *      Start         = offset to first event header in block relative to start of block
@@ -580,6 +588,7 @@ static void structInit(EVFILE *a)
     a->blocksToParse = 0; /* for reading version 1-3 files */
     /* Total data written = block header size so far */
     a->blksiz        = EV_HDSIZ;
+    a->blksbytesiz   = EV_HDSIZ * 4;
     a->blknum        = 1;
     a->blkNumDiff    = 0;
     /* Target block size (final size may be larger or smaller) */
@@ -2153,8 +2162,14 @@ if (debug) printf("Header size is too small (%u), return error\n", blkHdrSize);
 
             if (useFile && version < 4) {
                 // Read early version files in big chunks, integral multiples of a block
-                a->bufSize = EV_READ_BYTES_V3;
-                a->pBuf = a->buf = (uint32_t *) malloc(EV_READ_BYTES_V3);
+								if(version == 1) {
+                	a->bufSize = EV_READ_BYTES_V1;
+									a->pBuf = a->buf = (uint32_t *) malloc(EV_READ_BYTES_V1);
+								}
+								else {
+                	a->bufSize = EV_READ_BYTES_V3;
+									a->pBuf = a->buf = (uint32_t *) malloc(EV_READ_BYTES_V3);
+								}
             }
             else {
                 /* How big do we make this buffer? Use a minimum size. */
@@ -2190,17 +2205,18 @@ if (debug) printf("Header size is too small (%u), return error\n", blkHdrSize);
                     nBytes = (int64_t) fread(a->buf + EV_HDSIZ, 1, bytesToRead, a->file);
                 }
                 else {
+										a->blkbytesiz = (version == 1) ? EV_BLOCKSIZE_V1_BYTES : EV_BLOCKSIZE_V3_BYTES;
                     // We already read in the header. Take that into account when
                     // reading in next blocks.
                     long bytesLeftInFile = a->fileSize - a->filePosition;
                     uint32_t bytesRead = 0;
                     char *pBuf = (char *)a->buf;
 
-                    bytesToRead = (EV_READ_BYTES_V3 - 32) < bytesLeftInFile ?
-                                  (EV_READ_BYTES_V3 - 32) : (uint32_t) bytesLeftInFile;
+                    bytesToRead = (a->bufSize - 32) < bytesLeftInFile ?
+                                  (a->bufSize - 32) : (uint32_t) bytesLeftInFile;
 
-                    if ( (a->fileSize % 32768) != 0) {
-fprintf(stderr,"evOpenImpl: file is NOT integral # of 32K blocks!\n");
+                    if ( (a->fileSize % a->blkbytesiz) != 0) {
+fprintf(stderr,"evOpenImpl: file is NOT integral # of %dK blocks!\n", (int)(a->blkbytesiz/1000) );
                         localClose(a);
                         free(filename);
                         free(a->buf);
@@ -2235,7 +2251,7 @@ fprintf(stderr,"evOpenImpl: file is NOT integral # of 32K blocks!\n");
 
                     // Set blocks just read in that are not being parsed right now.
                     // We're parsing the very first hence the "- 1".
-                    a->blocksToParse = (bytesRead + 32)/32768 - 1;
+                    a->blocksToParse = (bytesRead + 32) / (a->blkbytesiz) - 1;
                 }
             }
             else if (useSocket) {
@@ -3355,8 +3371,14 @@ static int evGetNewBufferFileV3(EVFILE *a)
         /* The block size is a fixed 32kB which is on the small side.
          * We want to read in 16MB (EV_READ_BYTES_V3) or so at once
          * for efficiency. */
-        uint32_t fileBytesToRead = EV_READ_BYTES_V3 < bytesLeftInFile ?
-                                   EV_READ_BYTES_V3 : (int) bytesLeftInFile;
+        uint32_t fileBytesToRead = a->bufSize < bytesLeftInFile ?
+                                   a->bufSize : (int) bytesLeftInFile;
+				if(a->bufSize == EV_READ_BYTES_V3)
+					printf("a->bufsize == EV_READ_BYTES_V3\n");
+				else if(a->bufSize == EV_READ_BYTES_V1)
+					printf("a->bufsize == EV_READ_BYTES_V1\n");
+				else 
+					printf("a->bufsize != EV_READ_BYTES_V(1,2). a->bufSize = %d\n", a->bufSize);
 
         /* Read data */
         uint32_t bytesRead = 0;
@@ -3381,7 +3403,7 @@ static int evGetNewBufferFileV3(EVFILE *a)
         }
 
         /* How many blocks beyond the one we're doing right now? */
-        a->blocksToParse = fileBytesToRead / 32768 - 1;
+        a->blocksToParse = fileBytesToRead / (a->blkbytesiz) - 1; // mrc
 
         /* Keep track of where were are in internal buffer */
         a->buf = a->pBuf;
@@ -3392,7 +3414,7 @@ static int evGetNewBufferFileV3(EVFILE *a)
     /* We have more data (whole blocks) in the internal buffer */
     else {
         /* Move to next block */
-        a->buf += 8192;
+        a->buf += a->blksiz;
         a->blocksToParse--;
     }
 
@@ -3412,8 +3434,7 @@ static int evGetNewBufferFileV3(EVFILE *a)
     }
 
     /* Each block is same size. */
-    a->blksiz = a->buf[EV_HD_BLKSIZ];
-    if (a->blksiz != 8192) {
+    if (a->blksiz != a->buf[EV_HD_BLKSIZ]) {
 #ifdef DEBUG
         fprintf(stderr,"evGetNewBufferSeqV3: block size != 8192 words\n");
 #endif
