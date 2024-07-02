@@ -588,7 +588,7 @@ static void structInit(EVFILE *a)
     a->blocksToParse = 0; /* for reading version 1-3 files */
     /* Total data written = block header size so far */
     a->blksiz        = EV_HDSIZ;
-    a->blksbytesiz   = EV_HDSIZ * 4;
+    a->blkbytesiz   = EV_HDSIZ * 4;
     a->blknum        = 1;
     a->blkNumDiff    = 0;
     /* Target block size (final size may be larger or smaller) */
