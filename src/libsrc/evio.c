@@ -3373,12 +3373,6 @@ static int evGetNewBufferFileV3(EVFILE *a)
          * for efficiency. */
         uint32_t fileBytesToRead = a->bufSize < bytesLeftInFile ?
                                    a->bufSize : (int) bytesLeftInFile;
-				if(a->bufSize == EV_READ_BYTES_V3)
-					printf("a->bufsize == EV_READ_BYTES_V3\n");
-				else if(a->bufSize == EV_READ_BYTES_V1)
-					printf("a->bufsize == EV_READ_BYTES_V1\n");
-				else 
-					printf("a->bufsize != EV_READ_BYTES_V(1,2). a->bufSize = %d\n", a->bufSize);
 
         /* Read data */
         uint32_t bytesRead = 0;
